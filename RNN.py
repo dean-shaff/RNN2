@@ -2,6 +2,7 @@ import theano
 import theano.tensor as T 
 import numpy as np 
 from character_mapping import Character_Map
+import time
         # self.Whnhn = theano.shared(
         #           value=numpy.asarray(
         #                 rng.uniform(
@@ -30,33 +31,37 @@ class RNNlayer(object):
         """
         self.input = input 
         self.seq_length = T.shape(input)[0]
+        if rng == None:
+            self.Whnhn = theano.shared(
+                        value=np.zeros(
+                            (n_in, n_in),
+                            dtype=theano.config.floatX
+                        ),
+                        name='Whnhn',
+                        borrow=True
+                    )
 
-        self.Whnhn = theano.shared(
-                    value=np.zeros(
-                        (n_in, n_in),
-                        dtype=theano.config.floatX
-                    ),
-                    name='Whnhn',
-                    borrow=True
-                )
+            self.Wihn = theano.shared(
+                        value=np.zeros(
+                            (n_in, n_in),
+                            dtype=theano.config.floatX
+                        ),
+                        name='Wihn',
+                        borrow=True
+                    )
 
-        self.Wihn = theano.shared(
-                    value=np.zeros(
-                        (n_in, n_in),
-                        dtype=theano.config.floatX
-                    ),
-                    name='Wihn',
-                    borrow=True
-                )
-
-        self.bnh = theano.shared(
-                    value=np.zeros(
-                        (n_in,),
-                        dtype=theano.config.floatX
-                    ),
-                    name='bnh',
-                    borrow=True 
-                )   
+            self.bnh = theano.shared(
+                        value=np.zeros(
+                            (n_in,),
+                            dtype=theano.config.floatX
+                        ),
+                        name='bnh',
+                        borrow=True 
+                    )   
+        else:
+            print("Not yet implemented!")
+            
+        self.params = [self.Whnhn, self.Wihn, self.bnh]
         # the below code is just for the first layer.
         def recurrent_step(xt,htm1):
             ht = T.nnet.sigmoid(T.dot(self.Wihn,xt) + T.dot(self.Whnhn,htm1) + self.bnh)
@@ -88,6 +93,7 @@ class RNN(object):
         """
         if len(layers) == 1:
             self.layers = RNNlayer(input,layers[0],layers[0])
+            self.params = self.layers.params 
             n_out = layers[0]
             n_in = layers[0]
             results = self.layers.output 
@@ -112,7 +118,7 @@ class RNN(object):
                     name='bnh',
                     borrow=True 
                 )   
-
+        self.params += [self.Whny, self.by] 
         # self.p_y_given_x = T.nnet.softmax(T.dot(self.Whny, results) + self.by)
         def single_result_sequence(seq_result):
 
@@ -142,7 +148,14 @@ class RNN(object):
         'a' in the second spot in the sequence, the second element of the first row would be a '0'.
         y has to be integer for this to work 
         """
-        return -T.mean(T.log(self.p_y_given_x)[T.arange(y.shape[0]),y,:])     
+        # return -T.mean(T.log(self.p_y_given_x)[T.arange(y.shape[0]),:,y])    
+        log_tot = T.log(self.p_y_given_x)
+
+        log_prob, updates = theano.scan(fn=lambda i,yi: log_tot[i,T.arange(y.shape[1]),yi],
+                                        sequences = [T.arange(y.shape[0]), y]) 
+
+        return log_prob
+        # return T.log(self.p_y_given_x)[T.arange(y.shape[0]),y]     
 
     def error(self,y):
         """
@@ -150,22 +163,114 @@ class RNN(object):
         """
         return T.sum(T.neq(self.y_pred,y))
 
+
+
+def load_dataset(filename):
+    foo = Character_Map(filename,'mapping.dat',overwrite=True)
+    # print(len(foo.mapping))
+    map_matrix = foo.k_map()
+    return foo.gen_train_valid_test(filename=None)
+
+def test_train_RNN(**kwargs):
+    """
+    kwargs
+    """
+
+    filename = kwargs.get('filename','./../texts/melville.txt')
+    n_hidden = kwargs.get('n_hidden',77)
+    n_epochs = kwargs.get('n_epochs',100)
+    minibatch_size = kwargs.get('minibatch_size',100)
+    lr = kwargs.get('lr',0.01)
+
+    charmap = Character_Map(filename,'mapping.dat',overwrite=True)
+    charmap.k_map()
+    train, valid, test = charmap.gen_train_valid_test()
+
+    train_set_x, train_set_y = train
+    valid_set_x, valid_set_y = valid 
+    test_set_x, test_set_y = test
+
+    index = T.lscalar()
+    x = T.tensor3('x')
+    y = T.imatrix('y')
+
+    rng = numpy.random.RandomState(1234)
+
+    rnn = RNN(x,[77]) #i need to change this to take into account different in and out sizes. 
+
+    cost = rnn.neg_log_likelihood(y)
+    print("Compiling training, testing and validating functions...")
+    t0 = time.time()
+    test_model = theano.function(
+            inputs=[index],
+            outputs=rnn.error(y),
+            givens={
+                x: test_set_x[index * batch_size:(index + 1) * batch_size],
+                y: test_set_y[index * batch_size:(index + 1) * batch_size]
+            }
+
+        )
+
+    valid_model = theano.function(
+            inputs=[index],
+            outputs=rnn.error(y),
+            givens={
+                x: valid_set_x[index * batch_size:(index + 1) * batch_size],
+                y: valid_set_y[index * batch_size:(index + 1) * batch_size]
+            }
+        )
+
+    gparams = [T.grad(cost, param) for param in rnn.params]
+
+    updates = [
+        (param, param-learning_rate*gparam) for param, gparam in zip(rnn.params,gparams)
+    ]
+
+    train_model = theano.function(
+            inputs = [index],
+            outputs = cost,
+            updates = updates,
+            givens = {
+                x: test_set_x[index * batch_size:(index + 1) * batch_size],
+                y: test_set_y[index * batch_size:(index + 1) * batch_size]
+            }
+        )
+    print("Completed compiling functions. Took {:.2f} seconds".format(time.time() - t0))
+
+    #now with all the functions compiled we can go ahead and actually make shit run. 
+
+
+
 if __name__ == '__main__':
     filename = './../texts/melville.txt'
     foo = Character_Map(filename,'mapping.dat',overwrite=True)
     # print(len(foo.mapping))
     map_matrix = foo.k_map()
-    x_,y_,shared_x, shared_y = foo.gen_x_and_y(filename=None)
-    print(shared_x.get_value()[0].shape)
+    train, valid, test = foo.gen_train_valid_test(filename=None)
+    # print(train[1].get_value().dtype)
+    # print(train[1].get_value()[:10].shape)
     x = T.tensor3('x')
+    y = T.imatrix('y')
     # x = T.matrix('x')
     rnnlayer = RNNlayer(x,77,77)
 
     rnn = RNN(x,[77]) #the number of unique characters in Moby Dick 
-    f = theano.function(inputs=[x], outputs=rnnlayer.output)
-    f1 = theano.function(inputs=[x],outputs=rnn.p_y_given_x)
-    print(f(shared_x.get_value()[:5]).shape)
-    print(f1(shared_x.get_value()[:5]).shape)
+    # ftest = theano.function(inputs=[x], outputs=rnn.p_y_given_x)
+    # print(ftest(train[0].get_value()[:10]).shape)
+    print("Compiling training and testing functions...")
+    t0 = time.time()
+    ftrain = theano.function(inputs=[x,y],outputs=rnn.neg_log_likelihood(y))
+    ftest = theano.function(inputs=[x,y], outputs=rnn.error(y))
+    print("Completed compiling functions. Took {:.2f} seconds".format(time.time() - t0))
+    for i in xrange(10):
+        # print(ftrain(train[0].get_value()[i*10:(i+1)*10], train[1].get_value()[i*10:(i+1)*10]))
+        print(ftest(test[0].get_value()[i*10:(i+1)*10], test[1].get_value()[i*10:(i+1)*10]))
+
+
+    # f = theano.function(inputs=[x], outputs=rnnlayer.output)
+    # f1 = theano.function(inputs=[x],outputs=rnn.p_y_given_x)
+    # print(f(shared_x.get_value()[:5]).shape)
+    # print(f1(shared_x.get_value()[:5]).shape)
 
 
 

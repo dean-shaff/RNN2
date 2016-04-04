@@ -106,7 +106,7 @@ class Character_Map(object):
 			length_x = len(x)
 			# print(length_x//sequence_length)
 			x = np.asarray([sequence for sequence in [x[i:i+sequence_length] for i in xrange(length_x//sequence_length)]],dtype=theano.config.floatX)
-			y = np.asarray([sequence for sequence in [y[i:i+sequence_length] for i in xrange(length_x//sequence_length)]],dtype=int)
+			y = np.asarray([sequence for sequence in [y[i:i+sequence_length] for i in xrange(length_x//sequence_length)]],dtype=np.int32)
 			
 
 			shared_x = theano.shared(x,borrow=borrow)
@@ -145,7 +145,7 @@ class Character_Map(object):
 		x = x[shuffle_indices]
 		y = y[shuffle_indices]
 		train_x, train_y = x[:int(0.6*size)], y[:int(0.6*size)]
-		valid_x, valid_y = x[int(0.6*size):int(0.8*size)], y[int(0.6*size)int(0.8*size)]
+		valid_x, valid_y = x[int(0.6*size):int(0.8*size)], y[int(0.6*size):int(0.8*size)]
 		test_x, test_y = x[int(0.8*size):], y[int(0.8*size):]
 
 		train = [theano.shared(train_x), theano.shared(train_y)]
