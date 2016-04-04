@@ -59,8 +59,30 @@ class RNNlayer(object):
                         borrow=True 
                     )   
         else:
-            print("Not yet implemented!")
-            
+            self.Whnhn = theano.shared(
+                        value=rng.rand(
+                            n_in, n_in
+                        ),
+                        name='Whnhn',
+                        borrow=True
+                    )
+
+            self.Wihn = theano.shared(
+                        value=rng.rand(
+                            n_in, n_in
+                        ),
+                        name='Wihn',
+                        borrow=True
+                    )
+
+            self.bnh = theano.shared(
+                        value=rng.rand(
+                            n_in
+                        ),
+                        name='bnh',
+                        borrow=True 
+                    )  
+
         self.params = [self.Whnhn, self.Wihn, self.bnh]
         # the below code is just for the first layer.
         def recurrent_step(xt,htm1):
@@ -87,12 +109,12 @@ class RNNlayer(object):
 
 class RNN(object):
 
-    def __init__(self,input,layers):
+    def __init__(self,input,layers,rng=None):
         """
         layers is a list or tuple containing the number of elements in the each of the hidden layers. 
         """
         if len(layers) == 1:
-            self.layers = RNNlayer(input,layers[0],layers[0])
+            self.layers = RNNlayer(input,layers[0],layers[0],rng=rng)
             self.params = self.layers.params 
             n_out = layers[0]
             n_in = layers[0]
@@ -100,24 +122,39 @@ class RNN(object):
         else:
             print("Not yet implemented!")
 
+        if rng == None:
+            self.Whny = theano.shared(
+                        value=np.zeros(
+                            (n_in, n_out),
+                            dtype=theano.config.floatX
+                        ),
+                        name='Wihn',
+                        borrow=True
+                    )
 
-        self.Whny = theano.shared(
-                    value=np.zeros(
-                        (n_in, n_out),
-                        dtype=theano.config.floatX
-                    ),
-                    name='Wihn',
-                    borrow=True
-                )
+            self.by = theano.shared(
+                        value=np.zeros(
+                            n_out
+                        ),
+                        name='bnh',
+                        borrow=True 
+                    )   
+        else:
+            self.Whny = theano.shared(
+                        value=rng.rand(
+                            n_in, n_out
+                        ),
+                        name='Wihn',
+                        borrow=True
+                    )
 
-        self.by = theano.shared(
-                    value=np.zeros(
-                        (n_out,),
-                        dtype=theano.config.floatX
-                    ),
-                    name='bnh',
-                    borrow=True 
-                )   
+            self.by = theano.shared(
+                        value=rng.rand(
+                            n_out
+                        ),
+                        name='bnh',
+                        borrow=True 
+                    )   
         self.params += [self.Whny, self.by] 
         # self.p_y_given_x = T.nnet.softmax(T.dot(self.Whny, results) + self.by)
         def single_result_sequence(seq_result):
@@ -154,6 +191,8 @@ class RNN(object):
         log_prob, updates = theano.scan(fn=lambda i,yi: log_tot[i,T.arange(y.shape[1]),yi],
                                         sequences = [T.arange(y.shape[0]), y]) 
 
+        # self.log_prob = log_prob
+        # return -T.mean(log_prob)
         return log_prob
         # return T.log(self.p_y_given_x)[T.arange(y.shape[0]),y]     
 
@@ -175,7 +214,6 @@ def test_train_RNN(**kwargs):
     """
     kwargs
     """
-
     filename = kwargs.get('filename','./../texts/melville.txt')
     n_hidden = kwargs.get('n_hidden',77)
     n_epochs = kwargs.get('n_epochs',100)
@@ -184,19 +222,27 @@ def test_train_RNN(**kwargs):
 
     charmap = Character_Map(filename,'mapping.dat',overwrite=True)
     charmap.k_map()
-    train, valid, test = charmap.gen_train_valid_test()
+    train, valid, test = charmap.gen_train_valid_test(filename=None)
 
     train_set_x, train_set_y = train
     valid_set_x, valid_set_y = valid 
     test_set_x, test_set_y = test
 
+    n_train_batches = train_set_x.get_value(borrow=True).shape[0] // minibatch_size
+    n_valid_batches = valid_set_x.get_value(borrow=True).shape[0] // minibatch_size
+    n_test_batches = test_set_x.get_value(borrow=True).shape[0] // minibatch_size
+    # print(n_train_batches, n_valid_batches, n_test_batches)
+    print("Train size: {}, valid size {}, test size {}".format(train_set_x.get_value(borrow=True).shape[0],
+                                                                valid_set_x.get_value(borrow=True).shape[0],
+                                                                test_set_x.get_value(borrow=True).shape[0]))
+
     index = T.lscalar()
     x = T.tensor3('x')
     y = T.imatrix('y')
 
-    rng = numpy.random.RandomState(1234)
+    rng = np.random.RandomState(1234)
 
-    rnn = RNN(x,[77]) #i need to change this to take into account different in and out sizes. 
+    rnn = RNN(x,[n_hidden]) #i need to change this to take into account different in and out sizes. 
 
     cost = rnn.neg_log_likelihood(y)
     print("Compiling training, testing and validating functions...")
@@ -205,8 +251,8 @@ def test_train_RNN(**kwargs):
             inputs=[index],
             outputs=rnn.error(y),
             givens={
-                x: test_set_x[index * batch_size:(index + 1) * batch_size],
-                y: test_set_y[index * batch_size:(index + 1) * batch_size]
+                x: test_set_x[index * minibatch_size:(index + 1) * minibatch_size],
+                y: test_set_y[index * minibatch_size:(index + 1) * minibatch_size]
             }
 
         )
@@ -215,15 +261,15 @@ def test_train_RNN(**kwargs):
             inputs=[index],
             outputs=rnn.error(y),
             givens={
-                x: valid_set_x[index * batch_size:(index + 1) * batch_size],
-                y: valid_set_y[index * batch_size:(index + 1) * batch_size]
+                x: valid_set_x[index * minibatch_size:(index + 1) * minibatch_size],
+                y: valid_set_y[index * minibatch_size:(index + 1) * minibatch_size]
             }
         )
 
     gparams = [T.grad(cost, param) for param in rnn.params]
 
     updates = [
-        (param, param-learning_rate*gparam) for param, gparam in zip(rnn.params,gparams)
+        (param, param-lr*gparam) for param, gparam in zip(rnn.params,gparams)
     ]
 
     train_model = theano.function(
@@ -231,17 +277,40 @@ def test_train_RNN(**kwargs):
             outputs = cost,
             updates = updates,
             givens = {
-                x: test_set_x[index * batch_size:(index + 1) * batch_size],
-                y: test_set_y[index * batch_size:(index + 1) * batch_size]
+                x: train_set_x[index * minibatch_size:(index + 1) * minibatch_size],
+                y: train_set_y[index * minibatch_size:(index + 1) * minibatch_size]
             }
         )
     print("Completed compiling functions. Took {:.2f} seconds".format(time.time() - t0))
+    print("Starting training...")
+    valid_freq = 4
+    best_valid = np.inf 
+    for epoch in xrange(n_epochs):
+        for minibatch_index in xrange(n_train_batches-1):
+            mean_cost = train_model(minibatch_index)
+            iteration_number = epoch*n_train_batches + minibatch_index
+            if iteration_number % valid_freq == 0:
+                valid_losses = np.array([valid_model(i) for i in xrange(n_valid_batches)])
+                print(valid_losses)
+                mean_valid = np.mean(valid_losses)
+                print("Minibatch number: {}\nEpoch number: {}\nValidation Error {}".format(minibatch_index,epoch,mean_valid))
+                if mean_valid < best_valid:
+                    best_valid = mean_valid
+                    print("Best Validation so far: {}".format(best_valid))
+            else:
+                print("Number of iterations: {}, cost {}".format(iteration_number,mean_cost))
+
+    print("Done optimizing")
+
+
 
     #now with all the functions compiled we can go ahead and actually make shit run. 
 
 
 
-if __name__ == '__main__':
+
+def main_test():
+    rng = np.random.RandomState(1234)
     filename = './../texts/melville.txt'
     foo = Character_Map(filename,'mapping.dat',overwrite=True)
     # print(len(foo.mapping))
@@ -252,25 +321,33 @@ if __name__ == '__main__':
     x = T.tensor3('x')
     y = T.imatrix('y')
     # x = T.matrix('x')
-    rnnlayer = RNNlayer(x,77,77)
+    # rnnlayer = RNNlayer(x,77,77)
 
-    rnn = RNN(x,[77]) #the number of unique characters in Moby Dick 
+    rnn = RNN(x,[77],rng=rng) #the number of unique characters in Moby Dick 
     # ftest = theano.function(inputs=[x], outputs=rnn.p_y_given_x)
     # print(ftest(train[0].get_value()[:10]).shape)
     print("Compiling training and testing functions...")
     t0 = time.time()
     ftrain = theano.function(inputs=[x,y],outputs=rnn.neg_log_likelihood(y))
-    ftest = theano.function(inputs=[x,y], outputs=rnn.error(y))
+    # ftest = theano.function(inputs=[x,y], outputs=rnn.error(y))
+    # ftest1 = theano.function(inputs=[x,y],outputs=[rnn.y_pred, y])
     print("Completed compiling functions. Took {:.2f} seconds".format(time.time() - t0))
-    for i in xrange(10):
-        # print(ftrain(train[0].get_value()[i*10:(i+1)*10], train[1].get_value()[i*10:(i+1)*10]))
-        print(ftest(test[0].get_value()[i*10:(i+1)*10], test[1].get_value()[i*10:(i+1)*10]))
+    for i in xrange(2):
+        print(ftrain(train[0].get_value()[i*10:(i+1)*10], train[1].get_value()[i*10:(i+1)*10]))
+
+        # print(ftest1(test[0].get_value()[i*10:(i+1)*10], test[1].get_value()[i*10:(i+1)*10]))
+        # print()
 
 
     # f = theano.function(inputs=[x], outputs=rnnlayer.output)
     # f1 = theano.function(inputs=[x],outputs=rnn.p_y_given_x)
     # print(f(shared_x.get_value()[:5]).shape)
     # print(f1(shared_x.get_value()[:5]).shape)
+
+
+if __name__ == '__main__':
+    # test_train_RNN()
+    main_test()
 
 
 
