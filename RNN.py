@@ -3,17 +3,7 @@ import theano.tensor as T
 import numpy as np 
 from character_mapping import Character_Map
 import time
-        # self.Whnhn = theano.shared(
-        #           value=numpy.asarray(
-        #                 rng.uniform(
-        #                     low=-numpy.sqrt(6. / (n_in + n_out)),
-        #                     high=numpy.sqrt(6. / (n_in + n_out)),
-        #                     size=(n_in, n_out)
-        #                 ),
-        #                 dtype=theano.config.floatX
-        #             ),
-        #             name='Whnhn',
-        #             borrow=True)
+
 
 class RNNlayer(object):
 
@@ -86,13 +76,17 @@ class RNNlayer(object):
         self.params = [self.Whnhn, self.Wihn, self.bnh]
         # the below code is just for the first layer.
         def recurrent_step(xt,htm1):
-            ht = T.nnet.sigmoid(T.dot(self.Wihn,xt) + T.dot(self.Whnhn,htm1) + self.bnh)
+            # ht = T.nnet.sigmoid(T.dot(self.Wihn,xt) + T.dot(self.Whnhn,htm1) + self.bnh)
+            ht = T.nnet.sigmoid(T.dot(xt,self.Wihn) + T.dot(htm1,self.Whnhn) + self.bnh)
+
         #     yt = T.nnet.softmax(T.dot(Wh1y,ht) + by)
             return ht#, yt
 
         def single_sequence(seq):
-            h = T.nnet.sigmoid(T.dot(self.Wihn,seq[0]) + self.bnh)
-            h0 = T.reshape(h, (1,h.shape[0]))
+            # h = T.nnet.sigmoid(T.dot(self.Wihn,seq[0]) + self.bnh)
+            h = T.nnet.sigmoid(T.dot(seq[0],self.Wihn) + self.bnh)
+            # h0 = h
+            h0 = T.reshape(h, (1,h.shape[0],h.shape[1]))
 
 
             results, updates = theano.scan(fn=recurrent_step,
@@ -100,12 +94,14 @@ class RNNlayer(object):
                                            sequences=[seq[1:]])
 
             return T.concatenate([h0, results])
+            # return h0, results 
 
-        if (input.ndim == 2): 
-            self.output = single_sequence(input)
-        elif(input.ndim == 3):
-            self.output, updates = theano.scan(fn=single_sequence,
-                                        sequences=[input])
+        self.output = single_sequence(input)
+        # if (input.ndim == 2): 
+        #     self.output = single_sequence(input)
+        # elif(input.ndim == 3):
+        #     self.output, updates = theano.scan(fn=single_sequence,
+        #                                 sequences=[input])
 
 class RNN(object):
 
@@ -192,8 +188,8 @@ class RNN(object):
                                         sequences = [T.arange(y.shape[0]), y]) 
 
         # self.log_prob = log_prob
-        # return -T.mean(log_prob)
-        return log_prob
+        return -T.mean(log_prob)
+        # return log_prob
         # return T.log(self.p_y_given_x)[T.arange(y.shape[0]),y]     
 
     def error(self,y):
@@ -291,7 +287,7 @@ def test_train_RNN(**kwargs):
             iteration_number = epoch*n_train_batches + minibatch_index
             if iteration_number % valid_freq == 0:
                 valid_losses = np.array([valid_model(i) for i in xrange(n_valid_batches)])
-                print(valid_losses)
+                # print(valid_losses)
                 mean_valid = np.mean(valid_losses)
                 print("Minibatch number: {}\nEpoch number: {}\nValidation Error {}".format(minibatch_index,epoch,mean_valid))
                 if mean_valid < best_valid:
@@ -322,9 +318,11 @@ def main_test():
     y = T.imatrix('y')
     # x = T.matrix('x')
     # rnnlayer = RNNlayer(x,77,77)
-
+    # f = theano.function(inputs=[x], outputs=rnnlayer.output)
+    # foo = f(train[0].get_value()[:10])
+    # print(foo.shape)
     rnn = RNN(x,[77],rng=rng) #the number of unique characters in Moby Dick 
-    # ftest = theano.function(inputs=[x], outputs=rnn.p_y_given_x)
+    ftest = theano.function(inputs=[x], outputs=rnn.p_y_given_x)
     # print(ftest(train[0].get_value()[:10]).shape)
     print("Compiling training and testing functions...")
     t0 = time.time()
@@ -346,8 +344,8 @@ def main_test():
 
 
 if __name__ == '__main__':
-    # test_train_RNN()
-    main_test()
+    test_train_RNN()
+    # main_test()
 
 
 
