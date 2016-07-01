@@ -58,18 +58,18 @@ class Trainer(object):
         for epoch in xrange(n_epochs):
             print("\n\nStarting epoch {}...\n\n".format(epoch+1))
             for b in xrange(train_batches):
-                #t0 = time.time()
+                t0 = time.time()
                 cur_cost = self.train_model(b, lr,mb)
-                #print("Time calculating minibatch cost: {:.4f}".format(time.time() - t0)) 
-                #if b % 20 == 0 and b != 0:
-            t0 = time.time() 
-            r = np.random.randint(0, in_test.shape[0] - 1001)
-            err_test = self.error(in_test[r:r+1000], obs_test[r:r+1000]) 
-            err_train = self.error(in_train[r:r+1000], obs_train[r:r+1000]) 
-            print("Current cost: {}".format(cur_cost))
-            print("Current Test Error: {}".format(err_test))
-            print("Current Train Error: {}".format(err_train))
-            print("Time calculating errors: {:.4f}".format(time.time() - t0))
+                print("Time calculating minibatch cost: {:.4f}. Cost: {}".format(time.time() - t0,cur_cost)) 
+                if b % 20 == 0 and b != 0:
+                    t0 = time.time() 
+                    r = np.random.randint(0, in_test.shape[0] - 1001)
+                    err_test = self.error(in_test[r:r+1000], obs_test[r:r+1000]) 
+                    err_train = self.error(in_train[r:r+1000], obs_train[r:r+1000]) 
+                    print("Current cost: {}".format(cur_cost))
+                    print("Current Test Error: {}".format(err_test))
+                    print("Current Train Error: {}".format(err_train))
+                    print("Time calculating errors: {:.4f}".format(time.time() - t0))
 
 if __name__ == '__main__':
     
@@ -80,11 +80,11 @@ if __name__ == '__main__':
     x = T.tensor3('x')
     y = T.tensor3('y') 
     foo = np.random.rand(10,50) #random data 
-
-    rnn = RNN(x, dataset.seq_len, [dataset.char_len,dataset.char_len,300])
+    nhid = 200
+    rnn = RNN(x, dataset.seq_len, [dataset.char_len,dataset.char_len,nhid],mode='LSTM',bptt_truncate=-1)
 
     trainer = Trainer(rnn, dataset)
 
     trainer.compile_functions(x,y) 
-    trainer.gradient_descent(0.001,200,10) 
+    trainer.gradient_descent(0.01,200,10) 
     #print(trainer.feed_forward(foo).shape) 
